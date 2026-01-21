@@ -1,0 +1,608 @@
+  <!DOCTYPE html> 
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>3D Game AI Demo</title>
+ <LINK SRC="./style.css" ALT="my css">
+</head>
+
+<body>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.155/build/three.min.js"></script>
+  <script src="script.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+
+</body>
+
+</html>  
+
+<!-- <!DOCTYPE html>
+<html>
+<head>
+    <title>GTA: Retro City Fixed</title>
+    <style>
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Arial', sans-serif; }
+        #ui { position: absolute; top: 10px; left: 10px; color: #fff; pointer-events: none; text-shadow: 2px 2px #000; z-index: 10; }
+        #stars { color: #ffff00; font-size: 30px; }
+        #minimap { position: absolute; top: 10px; right: 10px; width: 160px; height: 160px; border: 3px solid #fff; background: rgba(0,0,0,0.8); }
+        #overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.8); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; }
+        .bar { width: 200px; height: 15px; background: #300; border: 1px solid #fff; margin-top: 5px; }
+        #hp-fill { width: 100%; height: 100%; background: #f00; }
+        button { padding: 15px 30px; font-size: 20px; cursor: pointer; background: #f00; color: #fff; border: none; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="overlay">
+    <h1>CITY RAMPAGE</h1>
+    <p>WASD: Walk | E: Car | Mouse: Shoot</p>
+    <button onclick="start()">START RAMPAGE</button>
+</div>
+
+<div id="ui">
+    <div id="stars"></div>
+    <div class="bar"><div id="hp-fill"></div></div>
+    <div id="cash">CASH: $0</div>
+</div>
+<canvas id="m"></canvas>
+<canvas id="g"></canvas>
+
+<script>
+const canvas = document.getElementById('g');
+const ctx = canvas.getContext('2d');
+const mCanvas = document.getElementById('m');
+const mCtx = mCanvas.getContext('2d');
+
+const TILE = 100;
+const MAP_SIZE = 40; 
+const WORLD = TILE * MAP_SIZE;
+
+let running = false;
+let keys = {};
+let p = { x: 300, y: 300, a: 0, hp: 100, cash: 0, car: null, crime: 0, lastShot: 0 };
+let map = [];
+let cars = [];
+let peds = [];
+let bullets = [];
+let cam = { x: 0, y: 0 };
+
+function start() {
+    running = true;
+    document.getElementById('overlay').style.display = 'none';
+}
+
+// Map Logic: 0 = road, 1 = building
+for(let y=0; y<MAP_SIZE; y++) {
+    map[y] = [];
+    for(let x=0; x<MAP_SIZE; x++) {
+        map[y][x] = (x===0 || y===0 || x===MAP_SIZE-1 || y===MAP_SIZE-1 || (x%4===0 && y%4===0)) ? 1 : 0;
+    }
+}
+
+// Spawn Entities
+for(let i=0; i<30; i++) cars.push({ x: Math.random()*WORLD, y: Math.random()*WORLD, a: 0, spd: 0, color: 'blue' });
+for(let i=0; i<50; i++) peds.push({ x: Math.random()*WORLD, y: Math.random()*WORLD, dead: false, police: i<5 });
+
+function isSolid(x, y) {
+    let tx = Math.floor(x/TILE);
+    let ty = Math.floor(y/TILE);
+    if(tx<0 || ty<0 || tx>=MAP_SIZE || ty>=MAP_SIZE) return true;
+    return map[ty][tx] === 1;
+}
+
+window.onkeydown = e => keys[e.code] = true;
+window.onkeyup = e => keys[e.code] = false;
+window.onmousedown = () => { if(running && !p.car && Date.now()-p.lastShot > 200) shoot(); };
+window.addEventListener('keydown', e => {
+    if(e.code === 'KeyE') {
+        if(p.car) { p.x += 60; p.car = null; }
+        else cars.forEach(c => { if(Math.hypot(c.x-p.x, c.y-p.y) < 70) p.car = c; });
+    }
+});
+
+function shoot() {
+    let ang = Math.atan2(window.event.clientY - canvas.height/2, window.event.clientX - canvas.width/2);
+    bullets.push({ x: p.x, y: p.y, vx: Math.cos(ang)*15, vy: Math.sin(ang)*15 });
+    p.lastShot = Date.now();
+    p.crime += 50;
+}
+
+function update() {
+    if(!running) return;
+
+    if(p.car) {
+        let v = p.car;
+        if(keys['KeyW']) v.spd = Math.min(v.spd+0.2, 10);
+        else if(keys['KeyS']) v.spd = Math.max(v.spd-0.2, -3);
+        else v.spd *= 0.98;
+        if(keys['KeyA']) v.a -= 0.05; if(keys['KeyD']) v.a += 0.05;
+        let nx = v.x + Math.sin(v.a)*v.spd;
+        let ny = v.y - Math.cos(v.a)*v.spd;
+        if(!isSolid(nx, ny)) { v.x = nx; v.y = ny; } else { v.spd = 0; }
+        p.x = v.x; p.y = v.y; p.a = v.a;
+    } else {
+        let dx = 0, dy = 0;
+        if(keys['KeyW']) dy -= 4; if(keys['KeyS']) dy += 4;
+        if(keys['KeyA']) dx -= 4; if(keys['KeyD']) dx += 4;
+        if(!isSolid(p.x+dx, p.y)) p.x += dx;
+        if(!isSolid(p.x, p.y+dy)) p.y += dy;
+        if(dx||dy) p.a = Math.atan2(dy, dx) + Math.PI/2;
+    }
+
+    bullets.forEach((b, i) => {
+        b.x += b.vx; b.y += b.vy;
+        if(isSolid(b.x, b.y)) bullets.splice(i,1);
+        peds.forEach(pe => {
+            if(!pe.dead && Math.hypot(pe.x-b.x, pe.y-b.y) < 20) { pe.dead = true; p.cash += 100; p.crime += 100; }
+        });
+    });
+
+    cam.x = p.x - canvas.width/2;
+    cam.y = p.y - canvas.height/2;
+
+    let wanted = Math.min(5, Math.floor(p.crime/500));
+    document.getElementById('stars').innerText = '★'.repeat(wanted);
+    document.getElementById('hp-fill').style.width = p.hp + '%';
+    document.getElementById('cash').innerText = "CASH: $" + p.cash;
+    if(p.crime > 0) p.crime -= 0.1;
+}
+
+function draw() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    ctx.fillStyle = '#222'; ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    for(let y=0; y<MAP_SIZE; y++) {
+        for(let x=0; x<MAP_SIZE; x++) {
+            if(map[y][x] === 1) {
+                ctx.fillStyle = '#111';
+                ctx.fillRect(x*TILE-cam.x, y*TILE-cam.y, TILE, TILE);
+            }
+        }
+    }
+
+    cars.forEach(c => {
+        ctx.save(); ctx.translate(c.x-cam.x, c.y-cam.y); ctx.rotate(c.a);
+        ctx.fillStyle = 'blue'; ctx.fillRect(-20, -40, 40, 80); ctx.restore();
+    });
+
+    peds.forEach(pe => {
+        ctx.fillStyle = pe.dead ? '#500' : (pe.police ? '#00f' : '#e67e22');
+        ctx.fillRect(pe.x-cam.x-10, pe.y-cam.y-10, 20, 20);
+    });
+
+    if(!p.car) {
+        ctx.save(); ctx.translate(p.x-cam.x, p.y-cam.y); ctx.rotate(p.a);
+        ctx.fillStyle = 'yellow'; ctx.fillRect(-15, -15, 30, 30); ctx.restore();
+    }
+
+    ctx.fillStyle = '#fff'; bullets.forEach(b => ctx.fillRect(b.x-cam.x, b.y-cam.y, 4, 4));
+
+    // Minimap
+    mCtx.fillStyle = '#000'; mCtx.fillRect(0,0,160,160);
+    mCtx.fillStyle = '#0f0'; mCtx.fillRect(p.x*(160/WORLD), p.y*(160/WORLD), 4, 4);
+}
+
+function loop() { update(); draw(); requestAnimationFrame(loop); }
+loop();
+</script>
+</body>
+</html> -->
+
+<!-- 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>GTA: Retro City - Image Fixed</title>
+    <style>
+        body { margin: 0; background: #111; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
+        #ui { position: absolute; top: 10px; left: 10px; color: #fff; pointer-events: none; text-shadow: 2px 2px #000; z-index: 10; }
+        #stars { color: #ffff00; font-size: 32px; height: 40px; }
+        #minimap { position: absolute; top: 10px; right: 10px; width: 150px; height: 150px; border: 2px solid #fff; background: rgba(0,0,0,0.8); }
+        #overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.9); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; text-align: center; }
+        .bar-container { width: 200px; height: 15px; background: #300; border: 1px solid #fff; margin: 10px 0; }
+        #hp-bar { width: 100%; height: 100%; background: #f00; }
+        button { padding: 15px 40px; font-size: 22px; cursor: pointer; background: #10a37f; color: #fff; border: none; border-radius: 5px; font-weight: bold; }
+        button:disabled { background: #444; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+
+<div id="overlay">
+    <h1>CITY RAMPAGE</h1>
+    <p>WASD: Move | E: Enter Car | MOUSE: Shoot</p>
+    <button id="startBtn" onclick="start()">START GAME</button>
+</div>
+
+<div id="ui">
+    <div id="stars"></div>
+    <div class="bar-container"><div id="hp-bar"></div></div>
+    <div id="stats">CASH: $0</div>
+</div>
+<canvas id="minimap"></canvas>
+<canvas id="game"></canvas>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const mCanvas = document.getElementById('minimap');
+const mCtx = mCanvas.getContext('2d');
+
+const TILE = 100;
+const MAP_TILES = 40; 
+const WORLD_SIZE = TILE * MAP_TILES;
+
+// --- ASSET LOADING ---
+const carImg = new Image();
+carImg.crossOrigin = "anonymous";
+carImg.src = "car-2.jpg";
+let imgLoaded = false;
+carImg.onload = () => { imgLoaded = true; };
+
+let running = false;
+let keys = {};
+let player = { x: 500, y: 500, a: 0, hp: 100, cash: 0, car: null, crime: 0, lastShot: 0 };
+let map = [];
+let cars = [];
+let peds = [];
+let bullets = [];
+let cam = { x: 0, y: 0 };
+
+function start() {
+    running = true;
+    document.getElementById('overlay').style.display = 'none';
+}
+
+// Map Setup
+for(let y=0; y<MAP_TILES; y++) {
+    map[y] = [];
+    for(let x=0; x<MAP_TILES; x++) {
+        map[y][x] = (x===0 || y===0 || x===MAP_TILES-1 || y===MAP_TILES-1 || (x%5===0 && y%5===0)) ? 1 : 0;
+    }
+}
+
+// Spawn Cars with Sprite Clipping Logic
+for(let i=0; i<30; i++) {
+    cars.push({ 
+        x: Math.random()*WORLD_SIZE, 
+        y: Math.random()*WORLD_SIZE, 
+        a: Math.random()*Math.PI*2, 
+        spd: 0,
+        // Each car gets a random icon from the 4x4 grid in your image
+        sx: (Math.floor(Math.random()*4)) * 125, 
+        sy: (Math.floor(Math.random()*4)) * 125
+    });
+}
+for(let i=0; i<40; i++) peds.push({ x: Math.random()*WORLD_SIZE, y: Math.random()*WORLD_SIZE, dead: false, police: i<5 });
+
+function isWall(x, y) {
+    let tx = Math.floor(x/TILE);
+    let ty = Math.floor(y/TILE);
+    if(tx<0 || ty<0 || tx>=MAP_TILES || ty>=MAP_TILES) return true;
+    return map[ty][tx] === 1;
+}
+
+window.onkeydown = e => keys[e.code] = true;
+window.onkeyup = e => keys[e.code] = false;
+window.onmousedown = () => { if(running && !player.car) shoot(); };
+
+window.addEventListener('keydown', e => {
+    if(e.code === 'KeyE') {
+        if(player.car) { player.x += 60; player.car = null; }
+        else cars.forEach(c => { if(Math.hypot(c.x-player.x, c.y-player.y) < 70) player.car = c; });
+    }
+});
+
+function shoot() {
+    if(Date.now() - player.lastShot < 200) return;
+    let ang = Math.atan2(window.event.clientY - canvas.height/2, window.event.clientX - canvas.width/2);
+    bullets.push({ x: player.x, y: player.y, vx: Math.cos(ang)*15, vy: Math.sin(ang)*15 });
+    player.lastShot = Date.now();
+    player.crime += 50;
+}
+
+function update() {
+    if(!running) return;
+
+    if(player.car) {
+        let v = player.car;
+        if(keys['KeyW']) v.spd = Math.min(v.spd+0.2, 12);
+        else if(keys['KeyS']) v.spd = Math.max(v.spd-0.2, -4);
+        else v.spd *= 0.97;
+        
+        if(keys['KeyA']) v.a -= 0.05 * (v.spd/10); 
+        if(keys['KeyD']) v.a += 0.05 * (v.spd/10);
+        
+        let nx = v.x + Math.sin(v.a)*v.spd;
+        let ny = v.y - Math.cos(v.a)*v.spd;
+        if(!isWall(nx, ny)) { v.x = nx; v.y = ny; } else { v.spd *= -0.5; }
+        player.x = v.x; player.y = v.y; player.a = v.a;
+    } else {
+        let dx = 0, dy = 0;
+        if(keys['KeyW']) dy -= 4; if(keys['KeyS']) dy += 4;
+        if(keys['KeyA']) dx -= 4; if(keys['KeyD']) dx += 4;
+        if(!isWall(player.x+dx, player.y)) player.x += dx;
+        if(!isWall(player.x, player.y+dy)) player.y += dy;
+        if(dx||dy) player.a = Math.atan2(dy, dx) + Math.PI/2;
+    }
+
+    bullets.forEach((b, i) => {
+        b.x += b.vx; b.y += b.vy;
+        if(isWall(b.x, b.y)) bullets.splice(i,1);
+        peds.forEach(pe => {
+            if(!pe.dead && Math.hypot(pe.x-b.x, pe.y-b.y) < 20) { pe.dead = true; player.cash += 50; player.crime += 100; }
+        });
+    });
+
+    cam.x = player.x - canvas.width/2;
+    cam.y = player.y - canvas.height/2;
+
+    let wanted = Math.min(5, Math.floor(player.crime/500));
+    document.getElementById('stars').innerText = '★'.repeat(wanted);
+    document.getElementById('hp-bar').style.width = player.hp + '%';
+    document.getElementById('stats').innerText = "CASH: $" + player.cash;
+    if(player.crime > 0) player.crime -= 0.2;
+}
+
+function draw() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    ctx.fillStyle = '#222'; ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    // Map Walls
+    ctx.fillStyle = '#111';
+    for(let y=0; y<MAP_TILES; y++) {
+        for(let x=0; x<MAP_TILES; x++) {
+            if(map[y][x] === 1) ctx.fillRect(x*TILE-cam.x, y*TILE-cam.y, TILE, TILE);
+        }
+    }
+
+    // DRAW CARS
+    cars.forEach(c => {
+        ctx.save();
+        ctx.translate(c.x-cam.x, c.y-cam.y);
+        ctx.rotate(c.a);
+        if(imgLoaded) {
+            // Draw a 125x125 piece of the image as a 70x70 car
+            ctx.drawImage(carImg, c.sx, c.sy, 125, 125, -35, -35, 70, 70);
+        } else {
+            ctx.fillStyle = 'blue'; ctx.fillRect(-20, -40, 40, 80);
+        }
+        ctx.restore();
+    });
+
+    peds.forEach(pe => {
+        ctx.fillStyle = pe.dead ? '#500' : (pe.police ? '#00f' : '#e67e22');
+        ctx.fillRect(pe.x-cam.x-10, pe.y-cam.y-10, 20, 20);
+    });
+
+    if(!player.car) {
+        ctx.save(); ctx.translate(player.x-cam.x, player.y-cam.y); ctx.rotate(player.a);
+        ctx.fillStyle = '#ff0'; ctx.fillRect(-15, -15, 30, 30); ctx.restore();
+    }
+
+    ctx.fillStyle = '#fff'; bullets.forEach(b => ctx.fillRect(b.x-cam.x, b.y-cam.y, 4, 4));
+
+    // Minimap
+    mCanvas.width = 150; mCanvas.height = 150;
+    mCtx.fillStyle = '#000'; mCtx.fillRect(0,0,150,150);
+    mCtx.fillStyle = '#0f0'; mCtx.fillRect(player.x*(150/WORLD_SIZE), player.y*(150/WORLD_SIZE), 5, 5);
+}
+
+function loop() { update(); draw(); requestAnimationFrame(loop); }
+loop();
+</script>
+</body>
+</html>
+-->
+
+<!-- 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>GTA: Retro City - Explosive Edition</title>
+    <style>
+        body { margin: 0; background: #111; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
+        #ui { position: absolute; top: 10px; left: 10px; color: #fff; pointer-events: none; text-shadow: 2px 2px #000; z-index: 10; }
+        #stars { color: #ffff00; font-size: 32px; height: 40px; }
+        #minimap { position: absolute; top: 10px; right: 10px; width: 150px; height: 150px; border: 2px solid #fff; background: rgba(0,0,0,0.8); }
+        #overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.9); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; text-align: center; }
+        .bar-container { width: 200px; height: 15px; background: #300; border: 1px solid #fff; margin: 5px 0; }
+        #hp-bar { width: 100%; height: 100%; background: #f00; transition: 0.2s; }
+        button { padding: 15px 40px; font-size: 22px; cursor: pointer; background: #e74c3c; color: #fff; border: none; border-radius: 5px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="overlay">
+    <h1>CITY RAMPAGE: EXPLOSIONS</h1>
+    <p>WASD: Move | E: Enter/Exit Car | MOUSE: Shoot</p>
+    <button onclick="start()">START GAME</button>
+</div>
+
+<div id="ui">
+    <div id="stars"></div>
+    <div class="bar-container"><div id="hp-bar"></div></div>
+    <div id="stats">CASH: $0</div>
+</div>
+<canvas id="minimap"></canvas>
+<canvas id="game"></canvas>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const mCanvas = document.getElementById('minimap');
+const mCtx = mCanvas.getContext('2d');
+
+const TILE = 120;
+const MAP_TILES = 40; 
+const WORLD_SIZE = TILE * MAP_TILES;
+
+// Assets
+const carImg = new Image();
+carImg.crossOrigin = "anonymous";
+carImg.src = "https://cdn.vectorstock.com/i/500p/49/72/car-icons-set-vector-29624972.jpg";
+let imgLoaded = false;
+carImg.onload = () => imgLoaded = true;
+
+let running = false, keys = {}, bullets = [], explosions = [];
+let player = { x: 600, y: 600, a: 0, hp: 100, cash: 0, car: null, crime: 0, lastShot: 0 };
+let map = [], cars = [], peds = [], cam = { x: 0, y: 0 };
+
+function start() { running = true; document.getElementById('overlay').style.display = 'none'; }
+
+// Init Map
+for(let y=0; y<MAP_TILES; y++) {
+    map[y] = [];
+    for(let x=0; x<MAP_TILES; x++) {
+        map[y][x] = (x===0 || y===0 || x===MAP_TILES-1 || y===MAP_TILES-1 || (x%6===0 && y%6===0)) ? 1 : 0;
+    }
+}
+
+// Entities
+for(let i=0; i<35; i++) {
+    cars.push({ 
+        x: Math.random()*WORLD_SIZE, y: Math.random()*WORLD_SIZE, a: Math.random()*Math.PI*2, 
+        spd: 0, hp: 100, dead: false,
+        sx: (Math.floor(Math.random()*4)) * 125, sy: (Math.floor(Math.random()*4)) * 125
+    });
+}
+for(let i=0; i<50; i++) peds.push({ x: Math.random()*WORLD_SIZE, y: Math.random()*WORLD_SIZE, dead: false, police: i<6 });
+
+function isWall(x, y) {
+    let tx = Math.floor(x/TILE), ty = Math.floor(y/TILE);
+    return (tx<0 || ty<0 || tx>=MAP_TILES || ty>=MAP_TILES) || map[ty][tx] === 1;
+}
+
+function createExplosion(x, y) {
+    explosions.push({ x, y, radius: 10, maxRadius: 80, life: 1 });
+    // Damage nearby entities
+    if(Math.hypot(player.x - x, player.y - y) < 80) player.hp -= 30;
+    peds.forEach(pe => { if(Math.hypot(pe.x - x, pe.y - y) < 80) pe.dead = true; });
+}
+
+window.onkeydown = e => keys[e.code] = true;
+window.onkeyup = e => keys[e.code] = false;
+window.onmousedown = () => { if(running && !player.car) shoot(); };
+window.addEventListener('keydown', e => {
+    if(e.code === 'KeyE') {
+        if(player.car) { player.x += 70; player.car = null; }
+        else cars.forEach(c => { if(!c.dead && Math.hypot(c.x-player.x, c.y-player.y) < 80) player.car = c; });
+    }
+});
+
+function shoot() {
+    if(Date.now() - player.lastShot < 200) return;
+    let ang = Math.atan2(window.event.clientY - canvas.height/2, window.event.clientX - canvas.width/2);
+    bullets.push({ x: player.x, y: player.y, vx: Math.cos(ang)*16, vy: Math.sin(ang)*16, life: 60 });
+    player.lastShot = Date.now();
+    player.crime += 40;
+}
+
+function update() {
+    if(!running) return;
+
+    if(player.car) {
+        let v = player.car;
+        if(keys['KeyW']) v.spd = Math.min(v.spd+0.25, 14);
+        else if(keys['KeyS']) v.spd = Math.max(v.spd-0.2, -5);
+        else v.spd *= 0.97;
+        if(keys['KeyA']) v.a -= 0.06 * (v.spd/10); if(keys['KeyD']) v.a += 0.06 * (v.spd/10);
+        
+        let nx = v.x + Math.sin(v.a)*v.spd, ny = v.y - Math.cos(v.a)*v.spd;
+        if(!isWall(nx, ny)) { v.x = nx; v.y = ny; } 
+        else { 
+            if(Math.abs(v.spd) > 5) v.hp -= 20;
+            v.spd *= -0.5; 
+        }
+        if(v.hp <= 0 && !v.dead) { v.dead = true; createExplosion(v.x, v.y); player.car = null; }
+        player.x = v.x; player.y = v.y; player.a = v.a;
+    } else {
+        let dx = 0, dy = 0, spd = keys['ShiftLeft'] ? 7 : 3.5;
+        if(keys['KeyW']) dy -= spd; if(keys['KeyS']) dy += spd;
+        if(keys['KeyA']) dx -= spd; if(keys['KeyD']) dx += spd;
+        if(!isWall(player.x+dx, player.y)) player.x += dx;
+        if(!isWall(player.x, player.y+dy)) player.y += dy;
+        if(dx||dy) player.a = Math.atan2(dy, dx) + Math.PI/2;
+    }
+
+    bullets.forEach((b, i) => {
+        b.x += b.vx; b.y += b.vy; b.life--;
+        if(isWall(b.x, b.y) || b.life <= 0) bullets.splice(i,1);
+        cars.forEach(c => {
+            if(!c.dead && Math.hypot(c.x-b.x, c.y-b.y) < 40) { c.hp -= 10; bullets.splice(i,1); }
+        });
+        peds.forEach(pe => {
+            if(!pe.dead && Math.hypot(pe.x-b.x, pe.y-b.y) < 20) { pe.dead = true; player.cash += 50; player.crime += 150; bullets.splice(i,1); }
+        });
+    });
+
+    explosions.forEach((ex, i) => {
+        ex.radius += 4; ex.life -= 0.02;
+        if(ex.life <= 0) explosions.splice(i, 1);
+    });
+
+    cam.x = player.x - canvas.width/2; cam.y = player.y - canvas.height/2;
+    let wanted = Math.min(5, Math.floor(player.crime/600));
+    document.getElementById('stars').innerText = '★'.repeat(wanted);
+    document.getElementById('hp-bar').style.width = player.hp + '%';
+    document.getElementById('stats').innerText = `CASH: $${player.cash}`;
+    if(player.crime > 0) player.crime -= 0.1;
+    if(player.hp <= 0) location.reload();
+}
+
+function draw() {
+    canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+    ctx.fillStyle = '#222'; ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    // Map
+    ctx.fillStyle = '#111';
+    for(let y=0; y<MAP_TILES; y++) {
+        for(let x=0; x<MAP_TILES; x++) {
+            if(map[y][x] === 1) ctx.fillRect(x*TILE-cam.x, y*TILE-cam.y, TILE, TILE);
+        }
+    }
+
+    // Cars
+    cars.forEach(c => {
+        if(c.dead) {
+            ctx.fillStyle = '#444'; ctx.fillRect(c.x-cam.x-30, c.y-cam.y-30, 60, 60);
+            return;
+        }
+        ctx.save(); ctx.translate(c.x-cam.x, c.y-cam.y); ctx.rotate(c.a);
+        if(imgLoaded) ctx.drawImage(carImg, c.sx, c.sy, 125, 125, -40, -40, 80, 80);
+        if(c.hp < 40) { ctx.fillStyle = 'rgba(255,100,0,0.5)'; ctx.beginPath(); ctx.arc(0,0,20,0,7); ctx.fill(); }
+        ctx.restore();
+    });
+
+    peds.forEach(pe => {
+        ctx.fillStyle = pe.dead ? '#500' : (pe.police ? '#00f' : '#e67e22');
+        ctx.fillRect(pe.x-cam.x-12, pe.y-cam.y-12, 24, 24);
+    });
+
+    if(!player.car) {
+        ctx.save(); ctx.translate(player.x-cam.x, player.y-cam.y); ctx.rotate(player.a);
+        ctx.fillStyle = '#ff0'; ctx.fillRect(-15, -15, 30, 30); ctx.restore();
+    }
+
+    // Effects
+    ctx.fillStyle = '#fff'; bullets.forEach(b => ctx.fillRect(b.x-cam.x, b.y-cam.y, 4, 4));
+    explosions.forEach(ex => {
+        ctx.fillStyle = `rgba(255, ${100 * ex.life}, 0, ${ex.life})`;
+        ctx.beginPath(); ctx.arc(ex.x-cam.x, ex.y-cam.y, ex.radius, 0, 7); ctx.fill();
+    });
+
+    // Radar
+    mCanvas.width = 150; mCanvas.height = 150;
+    mCtx.fillStyle = '#000'; mCtx.fillRect(0,0,150,150);
+    mCtx.fillStyle = '#0f0'; mCtx.fillRect(player.x*(150/WORLD_SIZE), player.y*(150/WORLD_SIZE), 6, 6);
+}
+
+function loop() { update(); draw(); requestAnimationFrame(loop); }
+loop();
+</script>
+</body>
+</html> -->
+
